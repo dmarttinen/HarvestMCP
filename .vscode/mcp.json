@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "harvest": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\DaleMarttinen\\Desktop\\Harvest MCP\\build\\index.js"
+      ],
+      "env": {
+        "HARVEST_ACCOUNT_ID": "${env:Harvest_ID}",
+        "HARVEST_ACCESS_TOKEN": "${env:Harvest_Token}"
+      }
+    }
+  }
+}
