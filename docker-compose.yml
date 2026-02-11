@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  harvest-mcp:
+    build: .
+    container_name: harvest-mcp-server
+    environment:
+      - HARVEST_ACCOUNT_ID=${HARVEST_ACCOUNT_ID}
+      - HARVEST_ACCESS_TOKEN=${HARVEST_ACCESS_TOKEN}
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
