@@ -32,7 +32,7 @@ const harvestClient: AxiosInstance = axios.create({
   headers: {
     "User-Agent": USER_AGENT,
     "Authorization": `Bearer ${HARVEST_ACCESS_TOKEN}`,
-    "Harvest-Account-ID": HARVEST_ACCOUNT_ID,
+    "Harvest-Account-Id": HARVEST_ACCOUNT_ID,
     "Content-Type": "application/json"
   }
 });
@@ -48,6 +48,27 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+function formatHarvestError(error: any): string {
+  const status = error?.response?.status;
+  const apiMessage = error?.response?.data?.message || error?.response?.data?.error;
+  const message = apiMessage || error?.message || "Unknown error";
+
+  if (status === 403) {
+    return `Harvest API error (403): ${message}. This usually means your token lacks permission for that endpoint. Try using endpoints under /users/me/* (like /users/me/project_assignments), and verify HARVEST_ACCOUNT_ID matches the token’s account.`;
+  }
+
+  return `Harvest API error${status ? ` (${status})` : ""}: ${message}`;
+}
+
+async function getMyProjectAssignments(): Promise<any[]> {
+  const response = await harvestClient.get("/users/me/project_assignments", {
+    params: {
+      per_page: 2000
+    }
+  });
+  return response.data.project_assignments || [];
+}
+
 // Tool 1: List active projects
 server.registerTool(
   "list_projects",
@@ -57,18 +78,22 @@ server.registerTool(
   },
   async () => {
     try {
-      const response = await harvestClient.get("/projects", {
-        params: { is_active: true }
-      });
-      
-      const projects = response.data.projects.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        code: p.code,
-        client: p.client?.name || "No client",
-        is_billable: p.is_billable,
-        budget: p.budget
-      }));
+      // /v2/projects requires Admin or Project Manager; /v2/users/me/project_assignments works for normal members
+      const projectAssignments = await getMyProjectAssignments();
+
+      const projects = projectAssignments
+        .filter((pa: any) => pa.is_active)
+        .map((pa: any) => ({
+          id: pa.project?.id,
+          name: pa.project?.name,
+          code: pa.project?.code,
+          client: pa.client?.name || "No client",
+          // Not available from project assignment payload; keep keys for compatibility.
+          is_billable: null,
+          // This is the assignment-level budget (budget_by=person), not the overall project budget.
+          budget: pa.budget ?? null
+        }))
+        .filter((p: any) => typeof p.id === "number" && typeof p.name === "string");
 
       return {
         content: [
@@ -83,7 +108,7 @@ server.registerTool(
         content: [
           {
             type: "text",
-            text: `Error fetching projects: ${error.message}`
+            text: `Error fetching projects: ${formatHarvestError(error)}`
           }
         ],
         isError: true
@@ -103,17 +128,32 @@ server.registerTool(
   },
   async ({ project_id }) => {
     try {
-      const response = await harvestClient.get(`/projects/${project_id}/task_assignments`, {
-        params: { is_active: true }
-      });
-      
-      const tasks = response.data.task_assignments.map((ta: any) => ({
-        id: ta.task.id,
-        name: ta.task.name,
-        is_active: ta.is_active,
-        billable: ta.billable,
-        hourly_rate: ta.hourly_rate
-      }));
+      // Avoid /projects/{id}/task_assignments (Admin/PM required). Task assignments are embedded in /users/me/project_assignments.
+      const projectAssignments = await getMyProjectAssignments();
+      const assignment = projectAssignments.find((pa: any) => pa.project?.id === project_id);
+
+      if (!assignment) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `No project assignment found for project_id ${project_id}. If this project exists but isn't listed, you may not be assigned to it in Harvest.`
+            }
+          ],
+          isError: true
+        };
+      }
+
+      const tasks = (assignment.task_assignments || [])
+        .filter((ta: any) => ta.is_active)
+        .map((ta: any) => ({
+          id: ta.task?.id,
+          name: ta.task?.name,
+          is_active: ta.is_active,
+          billable: ta.billable,
+          hourly_rate: ta.hourly_rate
+        }))
+        .filter((t: any) => typeof t.id === "number" && typeof t.name === "string");
 
       return {
         content: [
@@ -128,7 +168,7 @@ server.registerTool(
         content: [
           {
             type: "text",
-            text: `Error fetching tasks: ${error.message}`
+            text: `Error fetching tasks: ${formatHarvestError(error)}`
           }
         ],
         isError: true

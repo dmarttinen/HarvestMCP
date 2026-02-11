@@ -26,20 +26,40 @@ A Model Context Protocol (MCP) server that integrates with Harvest time tracking
 2. Create a new Personal Access Token
 3. Note your Account ID and Access Token
 
-### 2. Configure Environment Variables
+### 2. Configure VS Code MCP (`.vscode/mcp.json`)
 
-Copy the example environment file:
+This repo is set up to run as a VS Code MCP server via `.vscode/mcp.json`. The MCP client (VS Code) is responsible for passing Harvest credentials as environment variables.
 
-```bash
-cp .env.example .env
+Your current `.vscode/mcp.json` looks like this:
+
+```jsonc
+{
+  "servers": {
+    "harvest": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\DaleMarttinen\\Desktop\\HarvestMCP\\build\\index.js"
+      ],
+      "env": {
+        "HARVEST_ACCOUNT_ID": "${env:Harvest_ID}",
+        "HARVEST_ACCESS_TOKEN": "${env:Harvest_Token}"
+      }
+    }
+  }
+}
 ```
 
-Edit `.env` and add your credentials:
+That means you should set these OS environment variables (or adjust the names to match what you use):
 
-```
-HARVEST_ACCOUNT_ID=your_account_id_here
-HARVEST_ACCESS_TOKEN=your_personal_access_token_here
-```
+- `Harvest_ID` → your Harvest Account ID
+- `Harvest_Token` → your Harvest Personal Access Token
+
+Notes:
+
+- The `${env:...}` syntax tells VS Code to read the value from your OS environment variables at runtime (it does not read from this repo’s `.env` file).
+- If you prefer, you can put the real values directly into `env`, but don’t commit secrets to git.
+- The `args` path can be absolute (as shown) or whatever your VS Code MCP setup supports for your machine.
 
 ### 3. Installation Options
 
@@ -58,6 +78,8 @@ Run the server:
 npm start
 ```
 
+If you run it directly (outside VS Code MCP), you must provide `HARVEST_ACCOUNT_ID` and `HARVEST_ACCESS_TOKEN` in your environment.
+
 #### Option B: Docker Container
 
 Build and run with Docker Compose:
@@ -65,6 +87,8 @@ Build and run with Docker Compose:
 ```bash
 docker-compose up -d
 ```
+
+Docker Compose reads `HARVEST_ACCOUNT_ID` / `HARVEST_ACCESS_TOKEN` from your shell environment, and it will also read a `.env` file in the same folder as `docker-compose.yml` if you choose to use one.
 
 Or build manually:
 
@@ -186,11 +210,23 @@ npm run watch
 
 ### "HARVEST_ACCOUNT_ID and HARVEST_ACCESS_TOKEN must be set"
 
-Make sure you've created a `.env` file with your credentials or passed them as environment variables.
+If you’re using VS Code MCP: make sure `.vscode/mcp.json` is passing these values via its `env` block (for example via `${env:Harvest_ID}` / `${env:Harvest_Token}`), and that those environment variables exist in your OS.
+
+If you’re running the server directly: set `HARVEST_ACCOUNT_ID` and `HARVEST_ACCESS_TOKEN` in your shell environment.
 
 ### "Error fetching projects: 401"
 
 Your access token may be invalid or expired. Generate a new one from the Harvest developers page.
+
+### "Error fetching projects: 403"
+
+Harvest returns `403 Forbidden` when your token doesn’t have permission for an endpoint (for example, `/v2/projects` requires Admin or Project Manager permissions).
+
+This server uses `/v2/users/me/project_assignments` to list the projects and tasks you’re assigned to, which works for normal member accounts. If you still get 403:
+
+- Double-check `HARVEST_ACCOUNT_ID` matches the account for your token.
+- Confirm the token hasn’t been revoked.
+- Verify you’re assigned to at least one project in Harvest.
 
 ### Docker container not starting
 
@@ -200,11 +236,11 @@ Check the logs:
 docker-compose logs harvest-mcp
 ```
 
-Ensure your `.env` file is in the same directory as `docker-compose.yml`.
+Ensure `HARVEST_ACCOUNT_ID` / `HARVEST_ACCESS_TOKEN` are available to Docker Compose (either set in your shell environment or via a `.env` file next to `docker-compose.yml`).
 
 ## Security Notes
 
-- Never commit your `.env` file or share your access token
+- Never commit secrets (tokens) to git
 - The access token provides full access to your Harvest account
 - Consider using environment-specific tokens for different deployments
 - Regularly rotate your access tokens
